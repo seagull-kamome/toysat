@@ -1,15 +1,14 @@
 {-# LANGUAGE ViewPatterns,OverloadedStrings #-}
 module SAT.ToySAT (CNF, solve, cnfParser) where
 
-
 import Control.Applicative ((<*>), (<*))
 import Control.Monad (unless)
-import Data.List (sort,sortBy, delete, partition,(\\), nub, intersect)
+import Data.List (sort,sortBy, delete, partition,(\\), nub, intersect,intersperse)
 import Data.Maybe (mapMaybe)
 import Data.Function (on)
 import qualified Data.Attoparsec.Char8 as AP
 
-data L = P { unL :: Int } | N { unL :: Int } deriving (Show,Eq)
+data L = P { unL :: Int } | N { unL :: Int } deriving (Eq)
 instance Ord L where
   compare x y = 
     case ((compare `on` unL) x y,x,y) of
@@ -17,13 +16,23 @@ instance Ord L where
       (EQ,N _,P _) -> LT
       (EQ,_,_) -> EQ
       (c,_,_) -> c
+instance Show L where
+  show (P x) = show x
+  show (N x) = show (-x)
 
 neg :: L -> L
 neg (P x) = N x
 neg (N x) = P x
 
-newtype CNF = CNF [Clause]
 type Clause = [L]
+data CNF = CNF Int [Clause]
+instance Show CNF where
+  show (CNF x ys) = 
+    "p cnf " ++ (show x) ++ " " ++ (show $ length ys) ++ "\n"
+    ++ (concatMap ((++ " 0\n").concat.intersperse " ".map show) ys)
+
+
+
 
 
 {-| CNFを充足する解のリストを得ます 
@@ -31,14 +40,17 @@ type Clause = [L]
 要テスト: 解が見つかった端から取り出せるようにする事。最後まで見つからないと出てこないのはNG。
 -}
 solve :: CNF -> [[L]]
-solve = go [] [] . cleanupRule . (\(CNF x) -> x)
+solve = go [] [] . cleanupRule . (\(CNF _ x) -> x)
   where 
     go ans ls = maybe ans 
-                (\(ls', cnf@((l:_):_)) ->
+                (\(ls', cnf) ->
                   let newls = ls ++ ls'
-                  in concat $ map (\x -> maybe [] (go ans (newls ++ [x])) $ resolve x cnf) [l,neg l]
+                  in case cnf of
+                    ([]) -> ans ++ [newls]
+                    ((l:_):_) -> concat $ map (\x -> maybe [] (go ans (newls ++ [x])) $ resolve x cnf) [l,neg l]
+                    _ -> error "Internal error"
                   ) . unitRule
-          
+
 
 {- | 探索前にCNFをクリーンアップします
 
@@ -83,8 +95,8 @@ unitRule xs
   where
     (nub.concat -> ls, xs') = partition (null.tail) xs
     ls' = map neg ls
-    xs'' = map (\\ ls') $ filter (not.null.intersect ls) xs'
-    
+    xs'' = map (\\ ls') $ filter (null.intersect ls) xs'
+
 
 {- | リテラルが真であるとみなして、節集合を簡略化します
    1. Lを含む節を除去します
@@ -100,19 +112,21 @@ resolve l xs
 
 
 
-
 {- =============================== -}
 
 cnfParser :: AP.Parser CNF
 cnfParser = 
-  do { AP.string "p cnf "; spc; n <- AP.decimal :: AP.Parser Int; spc; m <- AP.decimal; AP.endOfLine;
-       cnf <- if m > 1 then AP.many1 (clauseParser n ) else return [];
-       unless (length cnf /= m) $ fail $ "Mismatch number of clauses. specified " ++ (show m) ++ ", But take " ++ (show $ length cnf);
-       AP.endOfInput; 
-       return $ CNF cnf
-     } AP.<?> "CNF"
+  do { 
+    AP.skipMany commentParser;
+    AP.string "p cnf "; spc; n <- AP.decimal :: AP.Parser Int; spc; m <- AP.decimal; AP.endOfLine;
+    cnf <- if m > 1 then AP.many1 (clauseParser n >>= return . filter ((/= 0).unL)) else return [];
+    unless (length cnf == m) $ fail $ "Mismatch number of clauses. specified " ++ (show m) ++ ", But take " ++ (show $ length cnf);
+    AP.endOfInput; 
+    return $ CNF n cnf
+    } AP.<?> "CNF"
   where
     spc = AP.skipWhile (flip elem " \t") -- skipSpaceは改行もスキップするので使えない?
+    commentParser = do { AP.char 'c'; AP.skipWhile (/= '\n'); AP.endOfLine }
     clauseParser n = do { AP.many1 (litParser n) <* spc  <* AP.endOfLine } AP.<?> "Clause"
     litParser n = do { spc; AP.option P (AP.char '-' >> return N) <*> AP.decimal} AP.<?> "Literal"
 
