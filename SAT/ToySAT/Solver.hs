@@ -1,9 +1,8 @@
 {-# LANGUAGE ViewPatterns,OverloadedStrings #-}
 module SAT.ToySAT.Solver (solve,resolve,cleanupRule,unitRule) where
 
-import Data.List (sort,sortBy, delete, partition,(\\), nub, intersect)
+import Data.List (sort,delete, partition,(\\), nub, intersect)
 import Data.Maybe (mapMaybe)
-import Data.Function (on)
 
 import SAT.ToySAT.Types
 
@@ -13,7 +12,7 @@ import SAT.ToySAT.Types
   
 要テスト: 解が見つかった端から取り出せるようにする事。最後まで見つからないと出てこないのはNG。
 -}
-solve :: CNF -> [[L]]
+solve :: CNF -> [[Lit]]
 solve = go [] [] . cleanupRule . (\(CNF _ x) -> x)
   where 
     go ans ls = maybe ans 
@@ -29,8 +28,8 @@ solve = go [] [] . cleanupRule . (\(CNF _ x) -> x)
 {- | 探索前にCNFをクリーンアップします
 
    クリーンアップとは、
-     1. 同一の節にLが複数現れたら、1つにまとまる。(A ∧ A)はAと等しい
-     2. 同一の節にLと¬Lの両方が現れたら、その節は除去する。(A ∧ ¬A) は常に1
+     1. 同一の節にLが複数現れたら、1つにまとまる。(A ∨ A)はAと等しい
+     2. 同一の節にLと¬Lの両方が現れたら、その節は除去する。(A ∨ ¬A) は常に1
      3. できるだけ早く刈り込みが進むように、節の大きさが小さい順に並べる
        a. 探索木の底の方で細かいバックトラックが何度も発生するのを回避できるかも
        b. 空になった節を早く発見する事ができるかも
@@ -41,14 +40,20 @@ prop> \xs -> 1 == maximum (map (maximum.(map length).group.sort) $ cleanup xs)
 -}
 {-# INLINE cleanupRule #-}
 cleanupRule :: [Clause] -> [Clause]
-cleanupRule = map snd . sortBy (compare `on` fst) . mapMaybe (f (0 :: Int) [] . sort)
+cleanupRule = mapMaybe (f [] . sort)
   where
-    f n zs [] = Just (n, zs)
-    f n zs [x] = Just (succ n, (x:zs))
-    f n zs (x:xs@(y:_))
-      | x == y     = f n zs xs
+    f zs [] = Just zs
+    f zs [x] = Just (x:zs)
+    f zs (x:xs@(y:_))
+      | x == y     = f zs xs
       | x == neg y = Nothing
-      | otherwise  = f (succ n) (x:zs) xs
+      | otherwise  = f (x:zs) xs
+
+{- | 除去ルール
+
+  (L∨A∨B∨C)∧(¬L∨D∨E∨F)は
+  (A∨B∨C∨D∨E∨F)に置き換えできる。
+-}
 
 
 
@@ -61,7 +66,7 @@ cleanupRule = map snd . sortBy (compare `on` fst) . mapMaybe (f (0 :: Int) [] . 
     2. 空の節ができたばあい
 -}
 {-# INLINE unitRule #-}
-unitRule :: [Clause] -> Maybe ([L], [Clause])
+unitRule :: [Clause] -> Maybe ([Lit], [Clause])
 unitRule xs
   | not $ null $ intersect ls ls' = Nothing
   | elem [] xs'' = Nothing
@@ -77,7 +82,7 @@ unitRule xs
    2. ¬Lを除去します
    3.空の節ができた場合はNothingを戻します
 -}
-resolve :: L -> [Clause] -> Maybe [Clause]
+resolve :: Lit -> [Clause] -> Maybe [Clause]
 resolve l xs 
   | elem [] newclauses = Nothing
   | otherwise = Just newclauses
