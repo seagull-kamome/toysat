@@ -1,0 +1,21 @@
+#!/usr/bin/runhaskell
+module Main where
+
+import Control.Monad.Trans.Resource
+import Data.Conduit
+import Data.Conduit.Binary
+import Data.Conduit.Attoparsec
+import System.Environment
+import SAT.ToySAT
+
+
+
+main :: IO ()
+main = getArgs >>= mapM_ go
+  where
+    go fname = do
+      cnf <- runResourceT $ sourceFile fname $$ sinkParser cnfParser
+      print $ solve cnf
+  
+  
+  
