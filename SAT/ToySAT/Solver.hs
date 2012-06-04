@@ -1,5 +1,5 @@
 {-# LANGUAGE ViewPatterns,OverloadedStrings #-}
-module SAT.ToySAT.Solver (solve,resolve,cleanupRule,unitRule) where
+module SAT.ToySAT.Solver (solve,eval,cleanupRule,unitRule) where
 
 import Data.List (sort,delete, partition,(\\), nub, intersect)
 import Data.Maybe (mapMaybe)
@@ -9,7 +9,9 @@ import SAT.ToySAT.Types
 
 
 {-| CNFを充足する解のリストを得ます 
-  
+
+  かならずしも全ての解を検出できるとは限らない。
+
 要テスト: 解が見つかった端から取り出せるようにする事。最後まで見つからないと出てこないのはNG。
 -}
 solve :: CNF -> [[Lit]]
@@ -20,7 +22,7 @@ solve = go [] [] . cleanupRule . (\(CNF _ x) -> x)
                   let newls = ls ++ ls'
                   in case cnf of
                     ([]) -> ans ++ [newls]
-                    ((l:_):_) -> concat $ map (\x -> maybe [] (go ans (newls ++ [x])) $ resolve x cnf) [l,neg l]
+                    ((l:_):_) -> concat $ map (\x -> maybe [] (go ans (newls ++ [x])) $ eval x cnf) [l,neg l]
                     _ -> error "Internal error"
                   ) . unitRule
 
@@ -45,13 +47,11 @@ cleanupRule = mapMaybe (f [] . sort)
       | x == neg y = Nothing
       | otherwise  = f (x:zs) xs
 
-{- | 除去ルール
 
-  (L∨A∨B∨C)∧(￢L∨D∨E∨F)は
-  (A∨B∨C∨D∨E∨F)に置き換えできる。
+
+{- | 導出ルール (L∨A)∧(￢L∨B) -> (A∨B)
 -}
-
-
+--resolve :: Clause -> Clause -> Maybe Clause
 
 {- | 単一リテラル規則
    一つのリテラルLのみからなる節が存在した場合、Lは常に真で無くてはいけない
@@ -81,8 +81,8 @@ unitRule xs
    2. ￢Lを除去します
    3.空の節ができた場合はNothingを戻します
 -}
-resolve :: Lit -> [Clause] -> Maybe [Clause]
-resolve l xs 
+eval :: Lit -> [Clause] -> Maybe [Clause]
+eval l xs 
   | elem [] newclauses = Nothing
   | otherwise = Just newclauses
   where 
