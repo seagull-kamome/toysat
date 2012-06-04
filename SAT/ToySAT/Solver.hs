@@ -29,7 +29,7 @@ solve = go [] [] . cleanupRule . (\(CNF _ x) -> x)
 
    クリーンアップとは、
      1. 同一の節にLが複数現れたら、1つにまとまる。(A ∨ A)はAと等しい
-     2. 同一の節にLと¬Lの両方が現れたら、その節は除去する。(A ∨ ¬A) は常に1
+     2. 同一の節にLと￢Lの両方が現れたら、その節は除去する。(A ∨ ￢A) は常に1
      3. できるだけ早く刈り込みが進むように、節の大きさが小さい順に並べる
        a. 探索木の底の方で細かいバックトラックが何度も発生するのを回避できるかも
        b. 空になった節を早く発見する事ができるかも
@@ -51,7 +51,7 @@ cleanupRule = mapMaybe (f [] . sort)
 
 {- | 除去ルール
 
-  (L∨A∨B∨C)∧(¬L∨D∨E∨F)は
+  (L∨A∨B∨C)∧(￢L∨D∨E∨F)は
   (A∨B∨C∨D∨E∨F)に置き換えできる。
 -}
 
@@ -59,10 +59,10 @@ cleanupRule = mapMaybe (f [] . sort)
 
 {- | 単一リテラル規則
    一つのリテラルLのみからなる節が存在した場合、Lは常に真で無くてはいけない
-  という事なので、Lを含む節を節ごと除去し、¬Lを含む節はその節から¬Lを除去します。
+  という事なので、Lを含む節を節ごと除去し、￢Lを含む節はその節から￢Lを除去します。
   
   以下の場合は、節集合は充足不能なのでNothingを返します。
-    1. Lのみからなる節と¬Lのみからなる節の両方を発見した場合
+    1. Lのみからなる節と￢Lのみからなる節の両方を発見した場合
     2. 空の節ができたばあい
 -}
 {-# INLINE unitRule #-}
@@ -70,7 +70,10 @@ unitRule :: [Clause] -> Maybe ([Lit], [Clause])
 unitRule xs
   | not $ null $ intersect ls ls' = Nothing
   | elem [] xs'' = Nothing
-  | otherwise    = Just (ls, xs'')
+  | null ls      = return (ls, xs'')
+  | otherwise    = do
+    (x, y) <- unitRule xs''
+    return (x ++ ls, y)
   where
     (nub.concat -> ls, xs') = partition (null.tail) xs
     ls' = map neg ls
@@ -79,7 +82,7 @@ unitRule xs
 
 {- | リテラルが真であるとみなして、節集合を簡略化します
    1. Lを含む節を除去します
-   2. ¬Lを除去します
+   2. ￢Lを除去します
    3.空の節ができた場合はNothingを戻します
 -}
 resolve :: Lit -> [Clause] -> Maybe [Clause]
