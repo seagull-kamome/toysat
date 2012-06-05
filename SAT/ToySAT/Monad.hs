@@ -6,16 +6,15 @@ import Data.Ix (Ix,rangeSize)
 import SAT.ToySAT.Types
 
 
-data Probrem =  Probrem {
-  nextLit :: Int,
-  clause :: [Clause]
+data Constraints =  Constraints {
+  nextLit :: Int
   }
 
 
-type SAT m = StateT Probrem m
+type SAT m = StateT Constraints m
   
 reserveLit :: Monad m => Int -> SAT m Int
-reserveLit n = state (\s@(Probrem {..}) -> (nextLit, s { nextLit = nextLit + n }))
+reserveLit n = state (\s@(Constraints {..}) -> (nextLit, s { nextLit = nextLit + n }))
 
 
 

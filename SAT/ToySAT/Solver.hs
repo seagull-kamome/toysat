@@ -1,7 +1,7 @@
 {-# LANGUAGE ViewPatterns,OverloadedStrings #-}
-module SAT.ToySAT.Solver (solve,eval,cleanupRule,unitRule) where
+module SAT.ToySAT.Solver (solve,step,eval,cleanupRule,unitRule) where
 
-import Data.List (sort,delete, partition,(\\), nub, intersect)
+import Data.List (sortBy,delete, partition,(\\), nub, intersect)
 import Data.Maybe (mapMaybe)
 
 import SAT.ToySAT.Types
@@ -22,9 +22,18 @@ solve = go [] [] . cleanupRule . (\(CNF _ x) -> x)
                   let newls = ls ++ ls'
                   in case cnf of
                     ([]) -> ans ++ [newls]
-                    ((l:_):_) -> concat $ map (\x -> maybe [] (go ans (newls ++ [x])) $ eval x cnf) [l,neg l]
+                    ((l:_):_) -> concat $ map (\x -> maybe [] (go ans (newls ++ x)) $ eval x cnf) [[l],[negate l]]
                     _ -> error "Internal error"
                   ) . unitRule
+
+{- |
+ -}
+step :: [Lit] -> CNF -> Maybe ([Lit],CNF)
+step ls (CNF x ys) = do
+  (ls', ys') <- eval ls ys >>= unitRule
+  return $ (ls', CNF x ys')
+
+
 
 
 {- | 探索前にCNFをクリーンアップします
@@ -33,19 +42,19 @@ solve = go [] [] . cleanupRule . (\(CNF _ x) -> x)
      1. 同一の節にLが複数現れたら、1つにまとまる。(A ∨ A)はAと等しい
      2. 同一の節にLと￢Lの両方が現れたら、その節は除去する。(A ∨ ￢A) は常に1
 
-prop> \xs -> 1 == maximum (map (maximum.(map length).group.sort) $ cleanup xs)
+prop> \xs -> 1 == maximum (map (maximum.(map length).group.sortBy compareLit) $ cleanup xs)
 
 -}
 {-# INLINE cleanupRule #-}
 cleanupRule :: [Clause] -> [Clause]
-cleanupRule = mapMaybe (f [] . sort)
+cleanupRule = mapMaybe (f [] . sortBy compareLit)
   where
     f zs [] = Just zs
     f zs [x] = Just (x:zs)
     f zs (x:xs@(y:_))
-      | x == y     = f zs xs
-      | x == neg y = Nothing
-      | otherwise  = f (x:zs) xs
+      | x == y        = f zs xs
+      | x == negate y = Nothing
+      | otherwise     = f (x:zs) xs
 
 
 
@@ -72,7 +81,7 @@ unitRule xs
     return (x ++ ls, y)
   where
     (nub.concat -> ls, xs') = partition (null.tail) xs
-    ls' = map neg ls
+    ls' = map negate ls
     xs'' = map (\\ ls') $ filter (null.intersect ls) xs'
 
 
@@ -81,12 +90,12 @@ unitRule xs
    2. ￢Lを除去します
    3.空の節ができた場合はNothingを戻します
 -}
-eval :: Lit -> [Clause] -> Maybe [Clause]
-eval l xs 
+eval :: [Lit] -> [Clause] -> Maybe [Clause]
+eval ls xs 
   | elem [] newclauses = Nothing
   | otherwise = Just newclauses
   where 
-    newclauses = map (delete (neg l)) $ filter (not.elem l) xs
-
+    ls' = map negate ls
+    newclauses = map (\\ ls') $ filter (null.intersect ls) xs
 
 
