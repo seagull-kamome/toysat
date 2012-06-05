@@ -1,61 +1,61 @@
-{-# LANGUAGE ViewPatterns,OverloadedStrings,TypeFamilies,GADTs,RecordWildCards,NamedFieldPuns #-}
+{-# LANGUAGE ViewPatterns,OverloadedStrings,TypeFamilies,GADTs,RecordWildCards,NamedFieldPuns,ParallelListComp,FlexibleInstances #-}
 module SAT.ToySAT.Monad (SAT, reserveLit, SATVar(..), ChoiseVar, IxVar, BoolVar, newLit) where
 
+import Control.Applicative
 import Control.Monad.Trans.State
+import Control.Monad.Trans.Maybe
+import Control.Monad.Trans
+import Data.Default
 import Data.Ix (Ix,rangeSize)
 import SAT.ToySAT.Types
 
 
-data Constraints =  Constraints {
-  nextLit :: Int
-  }
+type SAT m = StateT CNF (MaybeT m)
+
+runSAT :: Monad m => SAT m a -> m (Maybe (a, CNF))
+runSAT x = runMaybeT $ runStateT x def
 
 
-type SAT m = StateT Constraints m
-  
-reserveLit :: Monad m => Int -> SAT m Int
-reserveLit n = state (\s@(Constraints {..}) -> (nextLit, s { nextLit = nextLit + n }))
+genIntegralLit :: Monad m => Int -> SAT m Int
+genIntegralLit n 
+  | n < 1 = error "getIntegral : 'n' must greater then zero."
+  | otherwise = do
+    m <- get >>= (\(a,s) -> put s >> return a) . reserveLit n
+    --m <- state $ reserveLit n  -- mtl-2.0.1.0ではstate関数はMonadStateのメソッドでは無いので通らない
+    let cl | n == 1 = []
+           | otherwise = concat $ [ [ [negate x, negate y] | y <- [(x+1)..(m+n-1) ]] | x <- [m..(m+n-2)] ]
+    modify $ addClauses $ ([m..(m+n-1)]) : cl
+    return m
 
-
-
-class SATVar a where
-  type SATVal a
-  type SATElem a
-  newVar :: (Monad m) =>　(SATVal a) -> SAT m a
-  --toLit :: (Monad m) => a -> (SATElem a) -> SAT m a
-  
-
-
-data ChoiseVar a = ChoiseVar [a] Int
-instance SATVar (ChoiseVar a) where
-  type SATVal (ChoiseVar a) = [a]
-  type SATElem (ChoiseVar a) = a
-  newVar xs = reserveLit n >>= return . ChoiseVar xs
-    where n = length xs
-
-
-data IxVar a = Ix a => IxVar (a,a) Int
-instance Ix a => SATVar (IxVar a) where
-  type SATVal (IxVar a) = (a, a)
-  type SATElem (IxVar a) = a
-  newVar x = reserveLit (rangeSize x) >>= return . IxVar x
 
 
 newtype BoolVar = BoolVar Int
 newLit :: Monad m => SAT m BoolVar
-newLit = reserveLit 1 >>= return . BoolVar
+newLit = genIntegralLit 1 >>= return . BoolVar
 
 
+data ChoiseVar a = ChoiseVar a Int
+data IxVar a = Ix a => IxVar (a,a) Int
 
+class SATVal a where
+  type SATVar a
+  newVar :: (Monad m) => a -> SAT m (SATVar a)
+  --toLit :: (Monad m) => a -> (SATElem a) -> SAT m a
+  
+instance SATVal [a] where
+  type SATVar [a] = ChoiseVar [a]
+  newVar xs = genIntegralLit (length xs) >>= return . ChoiseVar xs
 
---(:->) :: 
+instance Ix a => SATVal (a,a) where
+  type SATVar (a, a) = IxVar a
+  newVar x = genIntegralLit (rangeSize x) >>= return . IxVar x
 
+class SATVar a where
+  assign :: SATElem a
 
-
-myprobrem = do
-  apples <- newVar (0,20)
-  oranges <- newVar (0,50)
-  (apples :*: 50) :+: (oranges :*: 30) :<=: 2000
-  with apples `must` ((`mod` 2) == 0)
-  (apples :>=: 3) :->: (with oranges  `must` (>= 5)
+test :: Monad m => SAT m ()
+test = do
+  a <- newVar [1,2,3,4]
+  b <- newVar (1 :: Int, 9 :: Int) 
+  return ()
 
